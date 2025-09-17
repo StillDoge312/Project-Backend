@@ -1,16 +1,30 @@
+# frontend/pages/login.py
 from nicegui import ui
+from backend.auth import verify_user
 
-def page(ui):
-    @ui.page("/")
-    def login_page():
-        with ui.card().classes("w-80 mx-auto mt-20 p-6 shadow-lg"):
-            ui.label("Вход").classes("text-2xl mb-4")
+@ui.page("/")
+def login_page():
+    with ui.card().classes("w-80 mx-auto mt-20 p-6 shadow-lg"):
+        ui.label("Вход").classes("text-2xl mb-4")
 
-            username = ui.input("Логин").classes("w-full mb-2")
-            password = ui.input("Пароль", password=True, password_toggle_button=True).classes("w-full mb-4")
+        username_input = ui.input("Логин").classes("w-full mb-2")
+        password_input = ui.input("Пароль", password=True, password_toggle_button=True).classes("w-full mb-2")
 
-            def handle_login():
-                print("Login:", username.value, "Password:", password.value)
-                ui.notify("Попробуем войти...")
+        def try_login():
+            username = (username_input.value or "").strip()
+            password = password_input.value or ""
+            if not username or not password:
+                ui.notify("Заполните оба поля", color="warning")
+                return
 
-            ui.button("Войти", on_click=handle_login).classes("w-full")
+            ok, res = verify_user(username, password)
+            if ok:
+                ui.notify("Успешный вход", color="positive")
+                # Логин пройден — переходим в профиль.
+                # Пока сессии нет, просто переход.
+                ui.navigate.to("/profile")
+            else:
+                ui.notify(f"Ошибка: {res}", color="negative")
+
+        ui.button("Войти", on_click=try_login).classes("w-full mb-2")
+        ui.button("Регистрация", on_click=lambda: ui.navigate.to("/register")).classes("w-full outlined")
