@@ -25,4 +25,6 @@ def register_page():
                 ui.notify(f"Ошибка регистрации: {res}", color="negative")
 
         ui.button("Создать аккаунт", on_click=handle_register).classes("w-full mb-2")
-        ui.button("Назад к входу", on_click=lambda: ui.navigate.to("/")).classes("w-full outlined")
+        ui.button("Назад к входу", on_click=lambda: ui.navigate.to("/")).props("flat unelevated no-caps").classes(
+        "mx-auto bg-transparent shadow-none border-none text-blue-600 hover:underline"
+        )
