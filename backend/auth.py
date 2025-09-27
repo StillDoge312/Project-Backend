@@ -8,6 +8,10 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 def create_user(username: str, password: str):
     db = SessionLocal()
     try:
+        if len(username) < 5:
+            return False, "Логин должен быть не короче 5 символов"
+        if len(password) < 5:
+            return False, "Пароль должен быть не короче 5 символов"
         existing = db.query(User).filter(User.username == username).first()
         if existing:
             return False, "Username already exists"
