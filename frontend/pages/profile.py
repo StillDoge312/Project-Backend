@@ -27,11 +27,16 @@ def update_email(user_id: int, new_email: str):
     finally:
         db.close()
 
-
 @ui.page("/profile")
-async def profile_page(user_id: int):  # <-- ТЕПЕРЬ user_id ПРИХОДИТ ИЗ URL
+async def profile_page():
     import asyncio
     await asyncio.sleep(0.2)
+    
+    # Получаем user_id из query параметров
+    try:
+        user_id = int(ui.context.client.query_params.get('user_id', 1))
+    except:
+        user_id = 1
 
     user = get_user_from_db(user_id)
 
@@ -66,12 +71,20 @@ async def profile_page(user_id: int):  # <-- ТЕПЕРЬ user_id ПРИХОДИ
         if user:
             ui.label(f"👤 Имя пользователя: {user.username}").classes("text-lg")
             ui.label(f"📧 Email: {user.email if user.email else 'Не указан'}").classes("text-lg")
+            ui.label(f"🔐 Мастер-ключ: {'Установлен' if user.master_key else 'Не установлен'}").classes("text-lg")
             ui.label(f"📅 Дата регистрации: {user.created_at}").classes("text-lg")
         else:
             ui.label("Пользователь не найден").classes("text-red-500")
 
         ui.separator().classes("my-4 w-full")
-
-        ui.button("Выйти", on_click=lambda: ui.navigate.to("/")).props(
-            "flat unelevated no-caps"
-        ).classes("w-full bg-red-500 text-white hover:bg-red-600 rounded-lg shadow-md")
+        
+        # Кнопка перехода в Dashboard
+        with ui.row().classes("w-full gap-2"):
+            ui.button("🔑 Управление API ключами", 
+                     on_click=lambda: ui.navigate.to(f"/dashboard?user_id={user_id}")).props(
+                "outline unelevated no-caps"
+            ).classes("flex-1 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded-lg shadow-md")
+            
+            ui.button("Выйти", on_click=lambda: ui.navigate.to("/")).props(
+                "flat unelevated no-caps"
+            ).classes("flex-1 bg-red-500 text-white hover:bg-red-600 rounded-lg shadow-md")

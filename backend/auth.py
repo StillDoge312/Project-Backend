@@ -1,4 +1,3 @@
-# backend/auth.py
 from passlib.context import CryptContext
 from .db import SessionLocal
 from .models import User
@@ -34,3 +33,12 @@ def verify_user(username: str, password: str):
         return False, "Invalid password"
     finally:
         db.close()
+
+# Добавляем недостающие функции
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Проверяет пароль"""
+    return pwd_context.verify(plain_password, hashed_password)
+
+def get_password_hash(password: str) -> str:
+    """Хэширует пароль"""
+    return pwd_context.hash(password)

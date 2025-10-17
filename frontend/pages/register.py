@@ -1,4 +1,3 @@
-# frontend/pages/register.py
 from nicegui import ui
 from backend.auth import create_user
 
@@ -17,14 +16,15 @@ def register_page():
                 ui.notify("Заполните оба поля", color="warning")
                 return
 
-            ok, res = create_user(username, password)
+            ok, res = create_user(username, password)  # Убрали email - передаем только 2 аргумента
             if ok:
+                user_id = res
                 ui.notify("Регистрация успешна", color="positive")
-                ui.navigate.to("/profile")
+                ui.navigate.to(f"/profile?user_id={user_id}")
             else:
                 ui.notify(f"Ошибка регистрации: {res}", color="negative")
 
         ui.button("Создать аккаунт", on_click=handle_register).classes("w-full mb-2")
         ui.button("Назад к входу", on_click=lambda: ui.navigate.to("/")).props("flat unelevated no-caps").classes(
-        "mx-auto bg-transparent shadow-none border-none text-blue-600 hover:underline"
+            "mx-auto bg-transparent shadow-none border-none text-blue-600 hover:underline"
         )

@@ -20,7 +20,7 @@ def login_page():
             if ok:
                 user_id = res
                 ui.notify("Успешный вход", color="positive")
-                ui.navigate.to(f"/profile?user_id={user_id}")  # <-- ПЕРЕДАЁМ ID в URL
+                ui.navigate.to(f"/profile?user_id={user_id}")
             else:
                 ui.notify(f"Ошибка: {res}", color="negative")
 
