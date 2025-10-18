@@ -27,7 +27,6 @@ def update_email(user_id: int, new_email: str):
         db.close()
 
 @ui.page("/profile")
-<<<<<<< HEAD
 async def profile_page():
     import asyncio
     await asyncio.sleep(0.2)
@@ -38,9 +37,6 @@ async def profile_page():
     except:
         user_id = 1
 
-=======
-def profile_page(user_id: int = 1):  
->>>>>>> parent of eeb9efe (New Reworked system)
     user = get_user_from_db(user_id)
 
     with ui.row().classes("w-full justify-end p-4"):
