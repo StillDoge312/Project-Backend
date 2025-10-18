@@ -1,52 +1,49 @@
 import os
-from nicegui import ui, app
-from backend import api
+from nicegui import ui
 from backend.db import engine, Base
-import sqlite3
+from backend.models import User, Key  # Явный импорт моделей
 
-def check_and_migrate():
-    """Проверяет и обновляет структуру базы данных при необходимости"""
-    if not os.path.exists("data/app.db"):
-        return  # База создастся автоматически
-        
-    conn = sqlite3.connect('data/app.db')
-    cursor = conn.cursor()
+def initialize_database():
+    """Инициализация базы данных с проверкой"""
+    print("🔄 Инициализация базы данных...")
+    
+    # Создаем директорию
+    os.makedirs("data", exist_ok=True)
     
     try:
-        # Проверяем существующие столбцы
-        cursor.execute("PRAGMA table_info(users)")
-        columns = [column[1] for column in cursor.fetchall()]
+        # Создаем таблицы
+        Base.metadata.create_all(bind=engine)
+        print("✅ Таблицы созданы успешно!")
         
-        # Добавляем недостающие столбцы
-        if 'master_key' not in columns:
-            print("Добавляем столбец master_key...")
-            cursor.execute("ALTER TABLE users ADD COLUMN master_key VARCHAR")
-            conn.commit()
+        # Проверяем создание таблиц
+        from sqlalchemy import inspect
+        inspector = inspect(engine)
+        tables = inspector.get_table_names()
+        print(f"📊 Созданные таблицы: {tables}")
+        
+        if 'users' in tables:
+            print("✅ Таблица 'users' существует")
+        else:
+            print("❌ Таблица 'users' не создана!")
+            return False
             
-        if 'email' not in columns:
-            print("Добавляем столбец email...")
-            cursor.execute("ALTER TABLE users ADD COLUMN email VARCHAR")
-            conn.commit()
-            
+        return True
+        
     except Exception as e:
-        print(f"Ошибка миграции: {e}")
-    finally:
-        conn.close()
+        print(f"❌ Ошибка инициализации базы: {e}")
+        return False
 
-os.makedirs("data", exist_ok=True)
-
-# Проверяем и мигрируем базу перед созданием таблиц
-check_and_migrate()
-
-# Создаем таблицы (это безопасно - существующие таблицы не затрагиваются)
-Base.metadata.create_all(bind=engine)
-
-app.include_router(api.router)
-
-import frontend.pages.login
-import frontend.pages.register
-import frontend.pages.profile
-import frontend.pages.dashboard
-
-if __name__ in {"__main__", "__mp_main__"}:
-    ui.run(host="0.0.0.0", port=8000, reload=True)
+# Инициализируем базу ДО импорта страниц
+if initialize_database():
+    print("🚀 Запуск приложения...")
+    
+    # Импортируем страницы
+    import frontend.pages.login
+    import frontend.pages.register  
+    import frontend.pages.profile
+    import frontend.pages.dashboard
+    
+    # Запускаем приложение
+    ui.run(host="0.0.0.0", port=8000, reload=False)
+else:
+    print("💥 Не удалось инициализировать базу данных")

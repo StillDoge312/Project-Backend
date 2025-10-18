@@ -1,5 +1,4 @@
-# backend/models.py
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from .db import Base
@@ -9,10 +8,10 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True, nullable=False)
-    password_hash = Column(String, nullable=False)
-    email = Column(String, unique=True, nullable=True)  # Может быть NULL
+    password_hash = Column(String, nullable=False)  # Обязательно должно быть!
+    email = Column(String, unique=True, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
-    master_key = Column(String, nullable=True)  # Может быть NULL
+    master_key = Column(String, nullable=True)
 
     # связь с ключами
     keys = relationship("Key", back_populates="user", cascade="all, delete-orphan")

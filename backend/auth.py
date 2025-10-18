@@ -11,14 +11,24 @@ def create_user(username: str, password: str):
             return False, "Логин должен быть не короче 5 символов"
         if len(password) < 5:
             return False, "Пароль должен быть не короче 5 символов"
+        
+        # Проверяем существующего пользователя
         existing = db.query(User).filter(User.username == username).first()
         if existing:
-            return False, "Username already exists"
-        user = User(username=username, password_hash=pwd_context.hash(password))
+            return False, "Пользователь с таким именем уже существует"
+        
+        # Создаем пользователя с password_hash
+        user = User(
+            username=username,
+            password_hash=pwd_context.hash(password)  # Теперь это поле существует!
+        )
         db.add(user)
         db.commit()
         db.refresh(user)
         return True, user.id
+    except Exception as e:
+        db.rollback()
+        return False, f"Ошибка базы данных: {str(e)}"
     finally:
         db.close()
 
@@ -27,18 +37,18 @@ def verify_user(username: str, password: str):
     try:
         user = db.query(User).filter(User.username == username).first()
         if not user:
-            return False, "User not found"
+            return False, "Пользователь не найден"
+        
         if pwd_context.verify(password, user.password_hash):
             return True, user.id
-        return False, "Invalid password"
+        return False, "Неверный пароль"
+    except Exception as e:
+        return False, f"Ошибка базы данных: {str(e)}"
     finally:
         db.close()
 
-# Добавляем недостающие функции
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Проверяет пароль"""
     return pwd_context.verify(plain_password, hashed_password)
 
 def get_password_hash(password: str) -> str:
-    """Хэширует пароль"""
     return pwd_context.hash(password)
