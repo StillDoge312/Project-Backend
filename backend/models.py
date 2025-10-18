@@ -1,5 +1,10 @@
+<<<<<<< HEAD
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
+=======
+# backend/models.py
+from sqlalchemy import Column, Integer, String, DateTime
+>>>>>>> parent of eeb9efe (New Reworked system)
 from datetime import datetime
 from .db import Base
 
@@ -11,6 +16,7 @@ class User(Base):
     password_hash = Column(String, nullable=False)
     email = Column(String, unique=True, nullable=True)  # Может быть NULL
     created_at = Column(DateTime, default=datetime.utcnow)
+<<<<<<< HEAD
     master_key = Column(String, nullable=True)  # Может быть NULL
 
     # связь с ключами
@@ -29,3 +35,5 @@ class Key(Base):
 
     # связь с пользователем
     user = relationship("User", back_populates="keys")
+=======
+>>>>>>> parent of eeb9efe (New Reworked system)

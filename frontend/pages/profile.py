@@ -1,6 +1,9 @@
+# frontend/pages/profile.py
 from nicegui import ui
 from backend.db import SessionLocal
 from backend.models import User
+from backend.auth import verify_user
+
 
 def get_user_from_db(user_id: int):
     db = SessionLocal()
@@ -9,14 +12,10 @@ def get_user_from_db(user_id: int):
     finally:
         db.close()
 
+
 def update_email(user_id: int, new_email: str):
     db = SessionLocal()
     try:
-        # Проверяем, есть ли пользователь с таким email (и не он сам)
-        existing_user = db.query(User).filter(User.email == new_email, User.id != user_id).first()
-        if existing_user:
-            return "exists"
-
         user = db.query(User).filter(User.id == user_id).first()
         if user:
             user.email = new_email
@@ -28,6 +27,7 @@ def update_email(user_id: int, new_email: str):
         db.close()
 
 @ui.page("/profile")
+<<<<<<< HEAD
 async def profile_page():
     import asyncio
     await asyncio.sleep(0.2)
@@ -38,9 +38,13 @@ async def profile_page():
     except:
         user_id = 1
 
+=======
+def profile_page(user_id: int = 1):  
+>>>>>>> parent of eeb9efe (New Reworked system)
     user = get_user_from_db(user_id)
 
     with ui.row().classes("w-full justify-end p-4"):
+        # Кнопка Настройки
         with ui.menu() as menu:
             with ui.column().classes("p-4 gap-2"):
                 ui.label("⚙️ Настройки").classes("text-lg font-bold mb-2")
@@ -50,12 +54,9 @@ async def profile_page():
                 ).classes("w-64")
 
                 def save_email():
-                    result = update_email(user_id, email_input.value)
-                    if result == True:
+                    if update_email(user_id, email_input.value):
                         ui.notify("Email обновлён", color="positive")
                         menu.close()
-                    elif result == "exists":
-                        ui.notify("Такой email уже зарегистрирован", color="warning")
                     else:
                         ui.notify("Ошибка при сохранении", color="negative")
 

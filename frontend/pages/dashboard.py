@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 from nicegui import ui, app
 from backend.db import SessionLocal
 from backend.models import Key, User
@@ -212,3 +213,5 @@ def dashboard_page():
                 ui.label(f"Всего ключей: {len(keys)}").classes("font-semibold")
                 ui.label(f"Активных: {len(active_keys)}").classes("text-green-600 font-semibold")
                 ui.label(f"Неактивных: {len(keys) - len(active_keys)}").classes("text-orange-600 font-semibold")
+=======
+>>>>>>> parent of eeb9efe (New Reworked system)
