@@ -6,4 +6,4 @@ cryptography
 nicegui
 python-dotenv
 bcrypt==3.2.2
-passlib[bcrypt]
+pyotp

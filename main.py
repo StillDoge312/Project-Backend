@@ -1,49 +1,21 @@
-import os
-from nicegui import ui
-from backend.db import engine, Base
-from backend.models import User, Key  # Явный импорт моделей
+﻿from nicegui import ui
 
-def initialize_database():
-    """Инициализация базы данных с проверкой"""
-    print("🔄 Инициализация базы данных...")
-    
-    # Создаем директорию
-    os.makedirs("data", exist_ok=True)
-    
+from backend.db import run_migrations
+
+
+def bootstrap_database() -> bool:
     try:
-        # Создаем таблицы
-        Base.metadata.create_all(bind=engine)
-        print("✅ Таблицы созданы успешно!")
-        
-        # Проверяем создание таблиц
-        from sqlalchemy import inspect
-        inspector = inspect(engine)
-        tables = inspector.get_table_names()
-        print(f"📊 Созданные таблицы: {tables}")
-        
-        if 'users' in tables:
-            print("✅ Таблица 'users' существует")
-        else:
-            print("❌ Таблица 'users' не создана!")
-            return False
-            
+        run_migrations()
+        print("Database migrated successfully")
         return True
-        
-    except Exception as e:
-        print(f"❌ Ошибка инициализации базы: {e}")
+    except Exception as exc:  # pylint: disable=broad-except
+        print(f"Failed to run migrations: {exc}")
         return False
 
-# Инициализируем базу ДО импорта страниц
-if initialize_database():
-    print("🚀 Запуск приложения...")
-    
-    # Импортируем страницы
-    import frontend.pages.login
-    import frontend.pages.register  
-    import frontend.pages.profile
-    import frontend.pages.dashboard
-    
-    # Запускаем приложение
+
+if bootstrap_database():
+    from frontend.pages import dashboard, keys, login, profile, register  # noqa: F401
+
     ui.run(host="0.0.0.0", port=8000, reload=False)
 else:
-    print("💥 Не удалось инициализировать базу данных")
+    print("Application terminated due to migration error")
