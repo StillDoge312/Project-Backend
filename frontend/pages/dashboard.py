@@ -1,214 +1,585 @@
-from nicegui import ui, app
+﻿import json
+from datetime import datetime
+from typing import Dict, List, Optional
+
+from nicegui import Client, ui
+from sqlalchemy.exc import SQLAlchemyError
+
+from backend import credentials as credential_service
+from backend.auth import (
+    confirm_two_factor,
+    disable_two_factor,
+    initiate_two_factor_setup,
+    set_master_key,
+    verify_master_key,
+)
 from backend.db import SessionLocal
 from backend.models import Key, User
-import datetime
 
-def get_user_from_db(user_id: int):
+
+def _load_user(user_id: int) -> Optional[User]:
     db = SessionLocal()
     try:
         return db.query(User).filter(User.id == user_id).first()
     finally:
         db.close()
 
-def verify_master_key(user_id: int, master_key: str) -> bool:
-    """Проверяет мастер-ключ пользователя"""
+
+def _update_email(user_id: int, email: str) -> bool:
     db = SessionLocal()
     try:
         user = db.query(User).filter(User.id == user_id).first()
-        return user and user.master_key == master_key
-    finally:
-        db.close()
-
-def set_master_key(user_id: int, master_key: str):
-    """Устанавливает мастер-ключ пользователю"""
-    db = SessionLocal()
-    try:
-        user = db.query(User).filter(User.id == user_id).first()
-        if user:
-            user.master_key = master_key
-            db.commit()
-            return True
-        return False
-    finally:
-        db.close()
-
-def get_user_keys(user_id: int):
-    db = SessionLocal()
-    try:
-        return db.query(Key).filter(Key.user_id == user_id).all()
-    finally:
-        db.close()
-
-def create_key(user_id: int, key_name: str, key_value: str, description: str = ""):
-    db = SessionLocal()
-    try:
-        new_key = Key(
-            user_id=user_id,
-            key_name=key_name,
-            key_value=key_value,
-            description=description,
-            created_at=datetime.datetime.now()
-        )
-        db.add(new_key)
+        if not user:
+            return False
+        user.email = email or None
         db.commit()
-        db.refresh(new_key)
-        return new_key
+        return True
     finally:
         db.close()
 
-def delete_key(key_id: int):
+
+def _list_keys(user_id: int) -> List[Key]:
+    db = SessionLocal()
+    try:
+        return (
+            db.query(Key)
+            .filter(Key.user_id == user_id)
+            .order_by(Key.created_at.desc())
+            .all()
+        )
+    finally:
+        db.close()
+
+
+def _create_key(user_id: int, name: str, value: str, description: str = ""):
+    db = SessionLocal()
+    try:
+        if not name.strip():
+            return False, "Enter key name"
+        if not value.strip():
+            return False, "Enter key value"
+        key = Key(
+            user_id=user_id,
+            key_name=name.strip(),
+            key_value=value.strip(),
+            description=description.strip() or None,
+            created_at=datetime.utcnow(),
+            is_active=True,
+        )
+        db.add(key)
+        db.commit()
+        db.refresh(key)
+        return True, key
+    except SQLAlchemyError as exc:
+        db.rollback()
+        return False, f"Database error: {exc}"
+    finally:
+        db.close()
+
+
+def _toggle_key_active(key_id: int, value: bool) -> bool:
     db = SessionLocal()
     try:
         key = db.query(Key).filter(Key.id == key_id).first()
-        if key:
-            db.delete(key)
-            db.commit()
-            return True
-        return False
+        if not key:
+            return False
+        key.is_active = value
+        db.commit()
+        return True
     finally:
         db.close()
 
-@ui.page("/dashboard")
-def dashboard_page():
-    # Получаем user_id из query параметров
+
+def _delete_key(key_id: int) -> bool:
+    db = SessionLocal()
     try:
-        user_id = int(ui.context.client.query_params.get('user_id', 1))
-    except:
-        user_id = 1
+        key = db.query(Key).filter(Key.id == key_id).first()
+        if not key:
+            return False
+        db.delete(key)
+        db.commit()
+        return True
+    finally:
+        db.close()
 
-    user = get_user_from_db(user_id)
-    
-    # Если пользователь не найден
-    if not user:
-        with ui.card().classes("max-w-md mx-auto mt-20 p-6"):
-            ui.label("❌ Ошибка").classes("text-xl font-bold mb-4")
-            ui.label("Пользователь не найден").classes("text-gray-600 mb-4")
-            ui.button("← Назад", on_click=lambda: ui.navigate.to("/")).classes("w-full")
-        return
-    
-    # Если у пользователя нет мастер-ключа, просим установить
-    if not user.master_key:
-        with ui.card().classes("max-w-md mx-auto mt-20 p-6"):
-            ui.label("🔐 Установите мастер-ключ").classes("text-xl font-bold mb-4")
-            ui.label("Этот ключ будет использоваться для доступа к панели управления API ключами").classes("text-gray-600 mb-4")
-            
-            master_key_input = ui.input("Мастер-ключ", password=True).classes("w-full mb-4")
-            confirm_key_input = ui.input("Подтвердите мастер-ключ", password=True).classes("w-full mb-4")
-            
-            def set_key():
-                if not master_key_input.value:
-                    ui.notify("Введите мастер-ключ", color="warning")
-                    return
-                if master_key_input.value != confirm_key_input.value:
-                    ui.notify("Ключи не совпадают", color="warning")
-                    return
-                
-                set_master_key(user_id, master_key_input.value)
-                ui.notify("Мастер-ключ установлен", color="positive")
-                ui.navigate.reload()
-            
-            ui.button("Установить мастер-ключ", on_click=set_key).classes("w-full bg-blue-500 text-white")
-            ui.button("← Назад в профиль", 
-                     on_click=lambda: ui.navigate.to(f"/profile?user_id={user_id}")).classes("w-full mt-2")
-        return
-    
-    # Используем session storage для отслеживания аутентификации
-    if not app.storage.session.get('master_key_authenticated', False):
-        with ui.card().classes("max-w-md mx-auto mt-20 p-6"):
-            ui.label("🔐 Введите мастер-ключ").classes("text-xl font-bold mb-4")
-            master_key_input = ui.input("Мастер-ключ", password=True).classes("w-full mb-4")
-            
-            def check_master_key():
-                if verify_master_key(user_id, master_key_input.value):
-                    app.storage.session['master_key_authenticated'] = True
-                    ui.navigate.reload()
+
+def _stat_card(title: str, value, description: str):
+    with ui.card().classes("min-w-[220px] flex-1 p-4 bg-blue-50 shadow-sm"):
+        ui.label(title).classes("text-xs uppercase tracking-wide text-gray-600")
+        ui.label(str(value)).classes("text-3xl font-semibold text-gray-900")
+        ui.label(description).classes("text-xs text-gray-500")
+
+
+def _activity_item(icon: str, title: str, subtitle: str):
+    with ui.row().classes("items-start gap-3"):
+        ui.icon(icon).classes("text-blue-500 mt-1")
+        with ui.column().classes("gap-1"):
+            ui.label(title).classes("text-sm font-medium text-gray-800")
+            ui.label(subtitle).classes("text-xs text-gray-600")
+
+
+def _render_overview(content_area: ui.element, user: User):
+    credential_count = len(credential_service.list_credentials(user.id))
+    key_count = len(_list_keys(user.id))
+
+    with content_area:
+        with ui.column().classes("w-full gap-6"):
+            with ui.card().classes("w-full p-6 bg-white shadow-sm flex flex-col gap-3"):
+                ui.label("Dashboard").classes("text-2xl font-semibold")
+                ui.label("Overview and quick actions.").classes("text-sm text-gray-600")
+                with ui.row().classes("w-full gap-4 flex-wrap"):
+                    _stat_card("Stored credentials", credential_count, "Passwords and secrets")
+                    _stat_card("Active keys", key_count, "API access tokens")
+                    status = "Enabled" if user.is_2fa_enabled else "Disabled"
+                    _stat_card("2FA", status, "Two-factor authentication")
+                with ui.row().classes("w-full gap-2 flex-wrap"):
+                    ui.button(
+                        "Add password",
+                        icon="password",
+                        on_click=lambda: ui.emit("navigate:passwords"),
+                    ).classes("bg-blue-500 text-white")
+                    ui.button(
+                        "Add key",
+                        icon="vpn_key",
+                        on_click=lambda: ui.emit("navigate:keys"),
+                    ).classes("bg-blue-500 text-white")
+                    ui.button(
+                        "Open profile",
+                        icon="person",
+                        on_click=lambda: ui.emit("navigate:profile"),
+                    ).props("outline")
+
+            with ui.card().classes("w-full p-6 bg-white shadow-sm flex flex-col gap-4"):
+                ui.label("Recent activity").classes("text-xl font-semibold")
+                if credential_count or key_count:
+                    with ui.column().classes("gap-3"):
+                        if credential_count:
+                            _activity_item(
+                                "password",
+                                "Passwords updated",
+                                'Open the "Passwords" view to manage stored records.',
+                            )
+                        if key_count:
+                            _activity_item(
+                                "vpn_key",
+                                "Access keys updated",
+                                'Review keys in the "Keys" section.',
+                            )
                 else:
-                    ui.notify("Неверный мастер-ключ", color="negative")
-            
-            ui.button("Войти", on_click=check_master_key).classes("w-full bg-green-500 text-white")
-            ui.button("← Назад в профиль", 
-                     on_click=lambda: ui.navigate.to(f"/profile?user_id={user_id}")).classes("w-full mt-2")
-        return
+                    ui.label("Activity will appear here after you add passwords or keys.").classes(
+                        "text-sm text-gray-600"
+                    )
 
-    # Основной интерфейс dashboard
-    with ui.column().classes("w-full"):
-        # Кнопка возврата в профиль и выхода
-        with ui.row().classes("w-full justify-between p-4"):
-            ui.button("← Назад в профиль", 
-                     on_click=lambda: ui.navigate.to(f"/profile?user_id={user_id}")).props("flat").classes("text-blue-600")
-            ui.button("Выйти из панели", 
-                     on_click=lambda: (app.storage.session.pop('master_key_authenticated', None), ui.navigate.reload())).props("flat").classes("text-red-600")
 
-        ui.label("Панель управления API ключами").classes("text-3xl font-bold text-center mt-6 mb-4")
+def _render_profile(content_area: ui.element, user: User, refresh_cb):
+    with content_area:
+        with ui.column().classes("w-full gap-6"):
+            with ui.card().classes("w-full p-6 bg-white shadow-sm flex flex-col gap-4"):
+                ui.label("Profile").classes("text-2xl font-semibold")
+                with ui.row().classes("items-center gap-6 flex-wrap"):
+                    ui.avatar(icon="person").props("size=72").classes("bg-blue-100 text-blue-600")
+                    with ui.column().classes("gap-1"):
+                        ui.label(user.username).classes("text-xl font-semibold")
+                        ui.label(user.email or "Email not set").classes("text-sm text-gray-600")
+                        ui.label(f"Joined: {user.created_at:%d.%m.%Y}").classes("text-xs text-gray-500")
+                        if user.last_login_at:
+                            ui.label(f"Last login: {user.last_login_at:%d.%m.%Y %H:%M}").classes(
+                                "text-xs text-gray-500"
+                            )
 
-        with ui.card().classes("max-w-3xl mx-auto p-6 shadow-lg flex flex-col gap-4"):
-            ui.label("🔑 Добавить новый API ключ").classes("text-xl font-semibold")
+            with ui.card().classes("w-full p-6 bg-white shadow-sm flex flex-col gap-3"):
+                ui.label("Contact information").classes("text-xl font-semibold")
+                ui.label("Update email to receive notifications and recovery links.").classes(
+                    "text-sm text-gray-600"
+                )
+                email_input = ui.input("Email", value=user.email or "").props("outlined").classes("w-full")
 
-            key_name_input = ui.input("Название ключа").props("outlined").classes("w-full")
-            key_value_input = ui.input("API ключ").props("outlined").classes("w-full")
-            key_desc_input = ui.input("Описание (опционально)").props("outlined").classes("w-full")
+                def save_email():
+                    new_email = (email_input.value or "").strip()
+                    if _update_email(user.id, new_email):
+                        ui.notify("Email updated", color="positive")
+                        refresh_cb()
+                    else:
+                        ui.notify("Unable to update email", color="negative")
 
-            def add_key():
-                if not key_name_input.value.strip():
-                    ui.notify("Введите название ключа", color="warning")
+                ui.button("Save", on_click=save_email, icon="save").classes("self-start bg-blue-500 text-white")
+
+            with ui.card().classes("w-full p-6 bg-white shadow-sm flex flex-col gap-3"):
+                ui.label("Quick stats").classes("text-xl font-semibold")
+                stats = credential_service.list_credentials(user.id)
+                with ui.row().classes("w-full gap-4 flex-wrap"):
+                    _stat_card("Credentials", len(stats), "Saved passwords and notes")
+                    status = "Enabled" if user.is_2fa_enabled else "Disabled"
+                    _stat_card("2FA", status, "Account protection")
+                    _stat_card("Master key", "Yes" if user.master_key else "No", "Sensitive actions")
+
+
+def _render_keys(content_area: ui.element, user: User):
+    state: Dict[str, List[Key]] = {"records": _list_keys(user.id)}
+
+    with content_area:
+        with ui.column().classes("w-full gap-6"):
+            with ui.card().classes("w-full p-6 bg-white shadow-sm flex flex-col gap-4"):
+                ui.label("Access keys").classes("text-2xl font-semibold")
+                ui.label("Generate and manage API keys.").classes("text-sm text-gray-600")
+
+                key_name = ui.input("Key name").props("outlined").classes("w-full")
+                key_value = ui.input("Key value", password=True, password_toggle_button=True).props("outlined").classes("w-full")
+                key_description = ui.textarea("Description (optional)").props("outlined").classes("w-full")
+
+                def add_key():
+                    ok, result = _create_key(
+                        user.id,
+                        key_name.value or "",
+                        key_value.value or "",
+                        description=key_description.value or "",
+                    )
+                    if ok:
+                        ui.notify("Key added", color="positive")
+                        key_name.value = ""
+                        key_value.value = ""
+                        key_description.value = ""
+                        state["records"] = _list_keys(user.id)
+                        render_list()
+                    else:
+                        ui.notify(str(result), color="negative")
+
+                ui.button("Save key", on_click=add_key, icon="add").classes("self-start bg-blue-500 text-white")
+
+            list_container = ui.column().classes("w-full gap-3")
+
+            def render_list():
+                list_container.clear()
+                if not state["records"]:
+                    with list_container:
+                        with ui.card().classes("w-full p-6 bg-white shadow-sm"):
+                            ui.label("No keys yet").classes("text-sm text-gray-600")
                     return
-                if not key_value_input.value.strip():
-                    ui.notify("Введите API ключ", color="warning")
-                    return
-                
-                new_key = create_key(user_id, key_name_input.value.strip(), key_value_input.value.strip(), key_desc_input.value.strip())
-                ui.notify(f"Ключ '{new_key.key_name}' добавлен", color="positive")
-                key_name_input.value = ""
-                key_value_input.value = ""
-                key_desc_input.value = ""
-                refresh_keys()
 
-            ui.button("Добавить ключ", on_click=add_key, icon="add").classes("bg-green-500 text-white rounded-lg shadow hover:bg-green-600 w-48")
-
-            ui.separator().classes("my-4")
-
-            key_container = ui.column().classes("w-full gap-3")
-
-            def refresh_keys():
-                key_container.clear()
-                keys = get_user_keys(user_id)
-                if not keys:
-                    with key_container:
-                        ui.label("У вас пока нет API ключей").classes("text-gray-500 italic text-center p-8")
-                    return
-                    
-                with key_container:
-                    for key in keys:
-                        with ui.card().classes("w-full p-4 border-l-4 border-green-500"):
-                            with ui.row().classes("w-full justify-between items-center"):
-                                with ui.column().classes("gap-1 flex-1"):
-                                    ui.label(key.key_name).classes("font-semibold text-lg")
+                for key in state["records"]:
+                    with list_container:
+                        with ui.card().classes("w-full p-4 bg-white shadow-sm"):
+                            with ui.row().classes("w-full justify-between items-start flex-wrap gap-4"):
+                                with ui.column().classes("gap-1"):
+                                    ui.label(key.key_name).classes("text-lg font-semibold")
                                     if key.description:
                                         ui.label(key.description).classes("text-sm text-gray-600")
-                                    with ui.row().classes("items-center gap-2"):
-                                        ui.label("Ключ:").classes("text-sm text-gray-600")
-                                        ui.label(f"{key.key_value[:12]}...").classes("font-mono text-sm bg-gray-100 px-2 py-1 rounded")
-                                    ui.label(f"Создан: {key.created_at.strftime('%d.%m.%Y %H:%M')}").classes("text-xs text-gray-500")
-                                
-                                with ui.row().classes("gap-2"):
-                                    # Кнопка копирования
-                                    def copy_key(key_value):
-                                        ui.run_javascript(f"navigator.clipboard.writeText('{key_value}')")
-                                        ui.notify("Ключ скопирован", color="info")
-                                    
-                                    ui.button(icon="content_copy", on_click=lambda k=key: copy_key(k.key_value)).props("outline")
-                                    
-                                    # Кнопка удаления
-                                    ui.button(icon="delete", color="red", 
-                                             on_click=lambda k=key: (delete_key(k.id), refresh_keys())).props("outline")
+                                    ui.label(f"Created: {key.created_at:%d.%m.%Y %H:%M}").classes("text-xs text-gray-500")
+                                with ui.row().classes("items-center gap-2"):
+                                    masked = "••••" + key.key_value[-4:]
+                                    ui.label(masked).classes("font-mono text-sm bg-gray-100 px-2 py-1 rounded")
 
-            refresh_keys()
+                                    def copy_value(value: str = key.key_value):
+                                        ui.run_javascript(f"navigator.clipboard.writeText({json.dumps(value)})")
+                                        ui.notify("Key copied", color="info")
 
-            # Статистика ключей
-            keys = get_user_keys(user_id)
-            active_keys = [k for k in keys if k.is_active]
-            
-            with ui.row().classes("w-full justify-around mt-4 p-4 bg-gray-50 rounded-lg"):
-                ui.label(f"Всего ключей: {len(keys)}").classes("font-semibold")
-                ui.label(f"Активных: {len(active_keys)}").classes("text-green-600 font-semibold")
-                ui.label(f"Неактивных: {len(keys) - len(active_keys)}").classes("text-orange-600 font-semibold")
+                                    ui.button(icon="content_copy", on_click=copy_value).props("flat")
+
+                                    def toggle_key(active: bool, key_id: int = key.id):
+                                        if _toggle_key_active(key_id, active):
+                                            ui.notify("Status updated", color="positive")
+                                            state["records"] = _list_keys(user.id)
+                                            render_list()
+                                        else:
+                                            ui.notify("Unable to update status", color="negative")
+
+                                    ui.switch(
+                                        "Active",
+                                        value=key.is_active,
+                                        on_change=lambda e, key_id=key.id: toggle_key(e.value, key_id),
+                                    )
+
+                                    def remove(key_id: int = key.id):
+                                        if _delete_key(key_id):
+                                            ui.notify("Key removed", color="positive")
+                                            state["records"] = _list_keys(user.id)
+                                            render_list()
+                                        else:
+                                            ui.notify("Unable to remove key", color="negative")
+
+                                    ui.button(icon="delete", color="red", on_click=remove).props("flat")
+
+            render_list()
+
+
+def _render_passwords(content_area: ui.element, user: User):
+    state: Dict[str, List[dict]] = {
+        "records": credential_service.list_credentials(user.id, include_sensitive=True)
+    }
+
+    with content_area:
+        with ui.column().classes("w-full gap-6"):
+            with ui.card().classes("w-full p-6 bg-white shadow-sm flex flex-col gap-4"):
+                ui.label("Passwords and logins").classes("text-2xl font-semibold")
+                ui.label("Securely store credentials and private notes.").classes("text-sm text-gray-600")
+
+                title_input = ui.input("Title").props("outlined").classes("w-full")
+                login_input = ui.input("Login (optional)").props("outlined").classes("w-full")
+                password_input = ui.input("Password", password=True, password_toggle_button=True).props("outlined").classes("w-full")
+                notes_input = ui.textarea("Notes (optional)").props("outlined").classes("w-full")
+
+                def add_record():
+                    ok, result = credential_service.create_credential(
+                        user.id,
+                        title_input.value or "",
+                        password_input.value or "",
+                        login=login_input.value or None,
+                        notes=notes_input.value or None,
+                    )
+                    if ok:
+                        ui.notify("Credential saved", color="positive")
+                        title_input.value = ""
+                        login_input.value = ""
+                        password_input.value = ""
+                        notes_input.value = ""
+                        state["records"] = credential_service.list_credentials(user.id, include_sensitive=True)
+                        render_list()
+                    else:
+                        ui.notify(str(result), color="negative")
+
+                ui.button("Save credential", on_click=add_record, icon="add").classes(
+                    "self-start bg-blue-500 text-white"
+                )
+
+            list_container = ui.column().classes("w-full gap-3")
+
+            def render_list():
+                list_container.clear()
+                if not state["records"]:
+                    with list_container:
+                        with ui.card().classes("w-full p-6 bg-white shadow-sm"):
+                            ui.label("No credentials yet").classes("text-sm text-gray-600")
+                    return
+
+                for record in state["records"]:
+                    with list_container:
+                        with ui.card().classes("w-full p-4 bg-white shadow-sm"):
+                            with ui.row().classes("w-full justify-between items-start flex-wrap gap-4"):
+                                with ui.column().classes("gap-1"):
+                                    ui.label(record["title"]).classes("text-lg font-semibold")
+                                    if record.get("login"):
+                                        ui.label(f"Login: {record['login']}").classes("text-sm text-gray-600")
+                                    if record.get("notes"):
+                                        ui.label(record["notes"]).classes("text-sm text-gray-500")
+                                    ui.label(f"Created: {record['created_at']:%d.%m.%Y %H:%M}").classes("text-xs text-gray-500")
+                                with ui.row().classes("items-center gap-2"):
+                                    def copy_password(value: str = record["password"]):
+                                        ui.run_javascript(f"navigator.clipboard.writeText({json.dumps(value)})")
+                                        ui.notify("Password copied", color="info")
+
+                                    ui.button(icon="content_copy", on_click=copy_password).props("flat")
+
+                                    def delete_record(rec_id: int = record["id"]):
+                                        ok, message = credential_service.delete_credential(user.id, rec_id)
+                                        if ok:
+                                            ui.notify("Credential removed", color="positive")
+                                            state["records"] = credential_service.list_credentials(
+                                                user.id, include_sensitive=True
+                                            )
+                                            render_list()
+                                        else:
+                                            ui.notify(message, color="negative")
+
+                                    ui.button(icon="delete", color="red", on_click=delete_record).props("flat")
+
+            render_list()
+
+
+def _render_settings(content_area: ui.element, user: User, refresh_cb):
+    with content_area:
+        with ui.column().classes("w-full gap-6"):
+            with ui.card().classes("w-full p-6 bg-white shadow-sm flex flex-col gap-4"):
+                ui.label("Two-factor authentication").classes("text-2xl font-semibold")
+                ui.label("Add one-time codes for additional protection.").classes("text-sm text-gray-600")
+
+                secret_container = ui.column().classes("w-full gap-3")
+
+                if user.is_2fa_enabled:
+
+                    def disable():
+                        ok, message = disable_two_factor(user.id)
+                        if ok:
+                            ui.notify(message, color="positive")
+                            refresh_cb()
+                        else:
+                            ui.notify(message, color="negative")
+
+                    ui.label("Status: enabled").classes("text-sm text-green-600")
+                    ui.button("Disable 2FA", on_click=disable, icon="lock_open").classes(
+                        "self-start bg-red-500 text-white"
+                    )
+                else:
+
+                    def start_setup():
+                        ok, payload = initiate_two_factor_setup(user.id)
+                        if not ok:
+                            ui.notify(str(payload), color="negative")
+                            return
+                        secret_container.clear()
+                        secret = payload["secret"]
+                        uri = payload["otpauth_uri"]
+                        with secret_container:
+                            ui.label(f"Secret: {secret}").classes(
+                                "font-mono text-sm bg-gray-100 px-3 py-2 rounded"
+                            )
+                            ui.qrcode(uri).props("size=160").classes("self-start")
+                            code_input = ui.input("Enter one-time code").props("outlined").classes(
+                                "w-full max-w-sm"
+                            )
+
+                            def confirm():
+                                ok_confirm, message = confirm_two_factor(user.id, code_input.value or "")
+                                if ok_confirm:
+                                    ui.notify(message, color="positive")
+                                    refresh_cb()
+                                else:
+                                    ui.notify(message, color="negative")
+
+                            ui.button("Confirm", on_click=confirm, icon="check").classes(
+                                "self-start bg-green-500 text-white"
+                            )
+
+                    ui.label("Status: disabled").classes("text-sm text-gray-600")
+                    ui.button("Enable 2FA", on_click=start_setup, icon="lock").classes(
+                        "self-start bg-blue-500 text-white"
+                    )
+
+                secret_container
+
+            with ui.card().classes("w-full p-6 bg-white shadow-sm flex flex-col gap-4"):
+                ui.label("Master key").classes("text-2xl font-semibold")
+                ui.label("Use a master key to confirm sensitive actions.").classes("text-sm text-gray-600")
+
+                current_input = ui.input(
+                    "Current master key", password=True, password_toggle_button=True
+                ).props("outlined").classes("w-full max-w-sm")
+                if not user.master_key:
+                    current_input.classes("hidden")
+
+                new_input = ui.input(
+                    "New master key", password=True, password_toggle_button=True
+                ).props("outlined").classes("w-full max-w-sm")
+                confirm_input = ui.input(
+                    "Confirm master key", password=True, password_toggle_button=True
+                ).props("outlined").classes("w-full max-w-sm")
+
+                def save_master_key():
+                    new_value = new_input.value or ""
+                    confirm_value = confirm_input.value or ""
+                    if new_value != confirm_value:
+                        ui.notify("Values do not match", color="warning")
+                        return
+                    if user.master_key and not verify_master_key(user.id, current_input.value or ""):
+                        ui.notify("Current master key is incorrect", color="negative")
+                        return
+                    ok, message = set_master_key(user.id, new_value)
+                    if ok:
+                        ui.notify(message, color="positive")
+                        refresh_cb()
+                    else:
+                        ui.notify(message, color="negative")
+
+                ui.button("Save", on_click=save_master_key, icon="save").classes(
+                    "self-start bg-blue-500 text-white"
+                )
+
+
+@ui.page("/dashboard")
+def dashboard_page(client: Client):
+    params = client.request.query_params if client and client.request else {}
+    try:
+        user_id = int(params.get("user_id", "0"))
+    except (TypeError, ValueError):
+        user_id = 0
+
+    user = _load_user(user_id)
+    if not user:
+        with ui.card().classes("max-w-md mx-auto mt-20 p-6"):
+            ui.label("User not found").classes("text-xl font-semibold mb-2")
+            ui.button("Back to login", on_click=lambda: ui.navigate.to("/")).classes("w-full")
+        return
+
+    active_view = {"value": "dashboard"}
+    nav_buttons: Dict[str, ui.button] = {}
+    content_area_holder: Dict[str, Optional[ui.element]] = {"element": None}
+
+    def set_active(view: str):
+        active_view["value"] = view
+        update_nav()
+        render_content()
+
+    def update_nav():
+        base = "w-full justify-start text-left no-wrap"
+        for view, button in nav_buttons.items():
+            if view == active_view["value"]:
+                button.classes(replace=f"{base} bg-blue-500 text-white")
+            else:
+                button.classes(replace=f"{base} text-gray-700 hover:bg-gray-100")
+
+    def render_content():
+        content_area = content_area_holder["element"]
+        if content_area is None:
+            return
+        current_user = _load_user(user_id)
+        if not current_user:
+            content_area.clear()
+            with content_area:
+                ui.label("User session is no longer valid").classes("text-lg text-red-500")
+            return
+        content_area.clear()
+        refresh_cb = render_content
+        if active_view["value"] == "dashboard":
+            _render_overview(content_area, current_user)
+        elif active_view["value"] == "profile":
+            _render_profile(content_area, current_user, refresh_cb)
+        elif active_view["value"] == "keys":
+            _render_keys(content_area, current_user)
+        elif active_view["value"] == "passwords":
+            _render_passwords(content_area, current_user)
+        else:
+            _render_settings(content_area, current_user, refresh_cb)
+
+    def handle_navigation(event):
+        mapping = {
+            "navigate:profile": "profile",
+            "navigate:keys": "keys",
+            "navigate:passwords": "passwords",
+        }
+        target = mapping.get(event.sender)
+        if target:
+            set_active(target)
+
+    ui.on("navigate:profile", handle_navigation)
+    ui.on("navigate:keys", handle_navigation)
+    ui.on("navigate:passwords", handle_navigation)
+
+    with ui.column().classes("w-full min-h-screen bg-gray-100"):
+        with ui.row().classes("w-full bg-gray-200 px-8 py-4 items-center justify-between shadow-sm"):
+            ui.label("Key Manager").classes("text-xl font-semibold text-gray-800")
+            with ui.row().classes("items-center gap-3"):
+                ui.label(user.username).classes("text-sm text-gray-700")
+                avatar = ui.avatar(icon="person").props("size=40 clickable")
+                avatar.classes("bg-purple-100 text-purple-600 cursor-pointer")
+                avatar.on("click", lambda: ui.navigate.to(f"/profile?user_id={user_id}"))
+
+        with ui.row().classes("flex-1 w-full"):
+            with ui.column().classes("w-64 bg-white border-r border-gray-200 py-6 px-4 gap-3"):
+                nav_config = [
+                    ("dashboard", "Dashboard", "space_dashboard"),
+                    ("profile", "Profile", "person"),
+                    ("keys", "Keys", "vpn_key"),
+                    ("passwords", "Passwords", "password"),
+                    ("settings", "Settings", "settings"),
+                ]
+                for view, label, icon in nav_config:
+                    button = ui.button(
+                        label,
+                        on_click=lambda v=view: set_active(v),
+                        icon=icon,
+                    ).props("flat no-caps")
+                    nav_buttons[view] = button
+                update_nav()
+
+            content_area_holder["element"] = ui.column().classes("flex-1 h-full overflow-auto p-8 gap-6")
+
+    render_content()
