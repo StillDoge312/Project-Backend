@@ -146,6 +146,3 @@ cython_debug/
 
 # VSCode files
 .vscode/
-
-# data files
-data/

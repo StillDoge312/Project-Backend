@@ -76,25 +76,34 @@ async def profile_page(client: Client):
             ui.button("Save", on_click=save_email).classes("mt-2 bg-blue-500 text-white")
 
         with ui.expansion("Two-factor authentication", icon="verified_user").classes("w-full"):
-            ui.label(
-                "Status: enabled" if user.is_2fa_enabled else "Status: disabled"
-            ).classes("text-lg mb-2")
+            status_label = ui.label("").classes("text-lg mb-2")
+
+            def update_status(enabled: bool) -> None:
+                if enabled:
+                    status_label.set_text("Status: enabled")
+                    status_label.classes(replace="text-lg mb-2 text-green-700 font-semibold")
+                else:
+                    status_label.set_text("Status: disabled")
+                    status_label.classes(replace="text-lg mb-2 text-gray-600")
+
+            update_status(user.is_2fa_enabled)
+            secret_container = ui.column().classes("gap-2")
 
             if user.is_2fa_enabled:
 
-                def disable():
+                def disable() -> None:
                     ok, message = disable_two_factor(user_id)
                     if ok:
                         ui.notify(message, color="positive")
+                        update_status(False)
                         ui.navigate.reload()
                     else:
                         ui.notify(message, color="negative")
 
                 ui.button("Disable 2FA", on_click=disable).classes("bg-red-500 text-white")
             else:
-                secret_container = ui.column().classes("gap-2")
 
-                def start_setup():
+                def start_setup() -> None:
                     ok, payload = initiate_two_factor_setup(user_id)
                     if not ok:
                         ui.notify(str(payload), color="negative")
@@ -106,13 +115,14 @@ async def profile_page(client: Client):
 
                     with secret_container:
                         ui.label(f"Secret: {secret}").classes("font-mono text-sm bg-gray-100 p-2 rounded")
-                        ui.qrcode(uri).classes("self-center")
+                        ui.code(uri, language="text").classes("self-center bg-gray-900 text-white max-w-xs")
                         code_input = ui.input("Enter verification code").classes("w-full")
 
-                        def confirm():
+                        def confirm() -> None:
                             ok_confirm, message = confirm_two_factor(user_id, code_input.value or "")
                             if ok_confirm:
                                 ui.notify(message, color="positive")
+                                update_status(True)
                                 ui.navigate.reload()
                             else:
                                 ui.notify(message, color="negative")
@@ -121,7 +131,10 @@ async def profile_page(client: Client):
 
                 ui.button("Enable 2FA", on_click=start_setup).classes("bg-blue-500 text-white")
 
+            secret_container
+
         with ui.row().classes("w-full justify-between mt-4"):
             ui.button("Go to dashboard", on_click=lambda: ui.navigate.to(f"/dashboard?user_id={user_id}"))
             ui.button("Manage credentials", on_click=lambda: ui.navigate.to(f"/keys?user_id={user_id}"))
             ui.button("Sign out", on_click=lambda: ui.navigate.to("/")).classes("bg-red-500 text-white")
+

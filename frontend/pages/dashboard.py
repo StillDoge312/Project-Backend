@@ -146,7 +146,7 @@ def _render_overview(content_area: ui.element, user: User):
                     ui.button(
                         "Купить подписку",
                         icon="shopping_cart",
-                        on_click=lambda: ui.navigate.to("/subscriptions"),
+                        on_click=lambda: ui.navigate.to(f"/subscriptions?user_id={user.id}"),
                     ).classes("bg-blue-500 text-white")
                     ui.button(
                         "Open profile",
@@ -427,7 +427,7 @@ def _render_settings(content_area: ui.element, user: User, refresh_cb):
                             ui.label(f"Secret: {secret}").classes(
                                 "font-mono text-sm bg-gray-100 px-3 py-2 rounded"
                             )
-                            ui.qrcode(uri).props("size=160").classes("self-start")
+                            ui.code(uri, language="text").classes("self-start bg-gray-900 text-white w-full max-w-xs")
                             code_input = ui.input("Enter one-time code").props("outlined").classes(
                                 "w-full max-w-sm"
                             )
@@ -588,3 +588,5 @@ def dashboard_page(client: Client):
             content_area_holder["element"] = ui.column().classes("flex-1 h-full overflow-auto p-8 gap-6")
 
     render_content()
+
+
