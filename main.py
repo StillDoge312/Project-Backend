@@ -14,7 +14,7 @@ def bootstrap_database() -> bool:
 
 
 if bootstrap_database():
-    from frontend.pages import dashboard, keys, login, profile, register  # noqa: F401
+    from frontend.pages import dashboard, keys, login, profile, register, subscriptions, checkout  # noqa: F401
 
     ui.run(host="0.0.0.0", port=8000, reload=False)
 else:

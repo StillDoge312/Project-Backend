@@ -144,6 +144,11 @@ def _render_overview(content_area: ui.element, user: User):
                         on_click=lambda: ui.emit("navigate:keys"),
                     ).classes("bg-blue-500 text-white")
                     ui.button(
+                        "Купить подписку",
+                        icon="shopping_cart",
+                        on_click=lambda: ui.navigate.to("/subscriptions"),
+                    ).classes("bg-blue-500 text-white")
+                    ui.button(
                         "Open profile",
                         icon="person",
                         on_click=lambda: ui.emit("navigate:profile"),
